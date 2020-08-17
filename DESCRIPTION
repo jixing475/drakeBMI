@@ -1,7 +1,7 @@
 Package: drakeBMI
 Title: What the Package Does (One Line, Title Case)
 Version: 0.0.0.9000
-Authors@R: 
+Authors@R:
     person(given = "First",
            family = "Last",
            role = c("aut", "cre"),
@@ -15,3 +15,20 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.0
 URL: https://github.com/jixing475/drakeBMI
 BugReports: https://github.com/jixing475/drakeBMI/issues
+Imports: 
+    bookdown,
+    ggplot2,
+    drake,
+    casewhen,
+    MASS,
+    knitr,
+    kableExtra,
+    labelled,
+    gtsummary,
+    flextable,
+    officer,
+    dplyr,
+    tidyr,
+    purrr
+Suggests1: devtools
+Suggests2: git2r

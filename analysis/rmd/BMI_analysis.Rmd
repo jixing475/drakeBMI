@@ -1,0 +1,868 @@
+---
+title: "BMI data clean and EDA"
+description: |
+  this note is for BMI data!
+author:
+  - name: Jixing Liu
+    url: https://jixing.netlify.com/
+    affiliation: 深圳妇幼
+date: "`r Sys.Date()`"
+#bibliography: biblio.bib  
+output:
+  radix::radix_article:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    self_contained: true
+---
+
+## setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+    echo = TRUE,      # Output code chunks
+    message = FALSE,  # Toggle off message output 
+    warning = FALSE,    # Toggle off warning output
+    fig.width = 6, fig.asp = 0.618, out.width = "70%", fig.align = "center") 
+# install.packages("conflicted")
+knitr::opts_knit$set(root.dir = usethis::proj_path())
+
+# libraries used in report
+library(drakeBMI)
+set_pkg()
+my.prop = fp_text(font.size = 14,
+                  bold = TRUE,
+                  font.family = "Times")
+
+theme_set(theme_light(base_family = "Avenir"))
+```
+
+
+## Import Data
+```{r}
+raw_data <- readd(raw_data) 
+meta_data <- readd(meta_data)
+```
+
+## 更新 metadata
+
+删除一些原始数据表格的修改, 比如有些变量不见了, 变量的顺序改变了
+
+```{r}
+meta_data <-
+  raw_data %>%
+  colnames() %>%
+  enframe() %>%
+  dplyr::select(var = value) %>%
+  left_join(meta_data) %>%
+  bind_rows(meta_data %>% filter(var_mutate == "yes"))
+```
+
+
+
+## data type raw var
+
+```{r}
+cols_num <- meta_data %>% 
+  filter(var_mutate == "no") %>% 
+  filter(type == "num") %>% 
+  pull(var)
+
+cols_fac <- meta_data %>% 
+  filter(var_mutate == "no") %>% 
+  filter(type == "factor") %>% 
+  pull(var)
+
+raw_data <- 
+  raw_data %>% 
+  mutate_at(all_of(cols_num), as.numeric) %>% 
+  mutate_at(all_of(cols_fac), as.factor) %>% 
+  mutate(patient_id = as.character(patient_id))
+  
+```
+
+
+
+## tidy data
+
+```{r}
+data_tidy <- 
+  raw_data %>%
+  # 替代实验变量中的 0 数值
+  mutate_at(meta_data %>% 
+              filter(type == "num") %>% 
+              filter(result_group == "肝肾功能") %>% 
+              pull(var),
+            ~ na_x2na(., x = 0) %>% na_x2na(., x = "/")
+  ) %>% 
+  # PE 表型 ==============================
+  mutate(age_group = if_else(matern_age >= 35, "高龄", "正常"),
+         liver_abnormal = if_else(ALT > 35 | AST > 84, "是", "否"),
+         alb_group = if_else(ALB < 25, "是", "否"),
+         cr_group = if_else(Cr > 106, "是", "否"),
+         plt_group = if_else(PLT < 100, "是", "否"),
+         M_outcome = if_else(liver_abnormal == "是" |
+                              cr_group == "是" |
+                               NICU_admission == "1" |
+                               ICU_admission == "1", 
+                             "是", "否")
+         ) %>% 
+  mutate(
+    infant_outcome = fct_relevel(infant_outcome,
+                                 "活产",
+                                 "围产死亡"),
+    SGA_LGA = fct_relevel(SGA_LGA,
+                          "正常体重",
+                          "小于胎龄儿",
+                          "大于胎龄儿")
+  ) %>% 
+  
+  # 两组 ==============================
+  # mutate(
+  #   BMI_group = case_when(
+  #     Pre_BMI <= 22.9 ~ "Normal",
+  #     Pre_BMI > 22.9 ~ "Obese"
+  #   ))  %>%
+  # dplyr::mutate(
+  #   BMI_group = as.factor(BMI_group),
+  #   BMI_group = fct_collapse(BMI_group,
+  #                            `Normal` = c("Normal"),
+  #                            `Obese` = c("Obese")),
+  #   BMI_group = fct_relevel(BMI_group,
+  #                           "Normal",
+  #                           "Obese")) %>%
+  # 三组  ==============================
+  mutate(
+    BMI_group = case_when(
+      Pre_BMI <= 22.9 ~ "Normal",
+      22.9 < Pre_BMI & Pre_BMI <= 24.9 ~ "Over weight",
+      Pre_BMI > 24.9 ~ "Obese"
+    ))  %>%
+  dplyr::mutate(
+    BMI_group = as.factor(BMI_group),
+    BMI_group = fct_collapse(BMI_group,
+                             `Normal` = c("Normal"),
+                             `Over weight` = c("Over weight"),
+                             `Obese` = c("Obese")),
+    BMI_group = fct_relevel(BMI_group,
+                            "Normal",
+                            "Over weight",
+                            "Obese")) 
+  # 四组 ==============================
+  # mutate(
+  #   BMI_group = case_when(
+  #     Pre_BMI <= 18.5 ~ "体重不足",
+  #     18.5 < Pre_BMI & Pre_BMI <= 23.9 ~ "体重正常",
+  #     Pre_BMI > 23.9 & Pre_BMI <= 27.9 ~ "超重",
+  #     Pre_BMI > 28  ~ "肥胖"
+  #   ))  %>%
+  # dplyr::mutate(
+  #   BMI_group = as.factor(BMI_group),
+  #   BMI_group = fct_collapse(BMI_group,
+  #                            `体重不足` = c("体重不足"),
+  #                            `体重正常` = c("体重正常"),
+  #                            `超重` = c("超重"),
+  #                            `肥胖` = c("肥胖")),
+  #   BMI_group = fct_relevel(BMI_group,
+  #                           "体重不足",
+  #                           "体重正常",
+  #                           "超重",
+  #                           "肥胖")) %>% 
+
+num_groups <- 3
+```
+
+## set label for tidy data
+```{r}
+cols_num <- meta_data %>% 
+  filter(type == "num") %>% 
+  pull(var)
+
+cols_fac <- meta_data %>% 
+  filter(type == "factor") %>% 
+  pull(var)
+
+data_tidy <- 
+  data_tidy %>% 
+  mutate_at(all_of(cols_num), as.numeric) %>% 
+  mutate_at(all_of(cols_fac), as.factor) %>% 
+  mutate(patient_id = as.character(patient_id))
+# set label for tidy data
+library(labelled)
+
+label_update <- 
+colnames(data_tidy) %>% 
+  as_tibble() %>% 
+  left_join(meta_data %>% dplyr::select(var, label), by = c("value"="var")) %>% 
+  pull(label)
+
+labelled::var_label(data_tidy) <- label_update
+```
+
+## df <- data_tidy 
+```{r}
+df <- data_tidy
+```
+
+
+## EDA
+
+```{r eval=FALSE, include=FALSE}
+#Explore Your Dataset
+library(tidyverse)
+#==== HEAD ====
+#==== DIM AND GLIMPSE ====
+dim(df)
+glimpse(df)
+
+library(skimr)
+skim(df)
+
+#==== CREATE_REPORT IN DATAEXPLORER ====
+library(DataExplorer)
+DataExplorer::create_report(df)
+```
+
+
+## BMI 分布
+```{r}
+df %>% 
+  dplyr::select(Pre_BMI) %>% 
+  skimr::skim() %>% 
+  knitr::kable() 
+
+
+ggplot(df) +
+  aes(x = Pre_BMI, fill = HDP) +
+  geom_histogram(bins = 30L) +
+  theme_minimal()
+
+ggplot(df) +
+  aes(x = Pre_BMI, fill = EOP_LOP) +
+  geom_histogram(bins = 30L) +
+  theme_minimal()
+```
+
+## 建模前的检查
+
+## 假设符合的检验 = 一般线性模型的假设
+
+1. 正态性: Y 变量要是正态分布 ✅   
+2. 独立性: 样本间独立, 没有重复
+3. 线性: Y 与 X 之间是线性的
+4. 同方差性: 因变量的方差不随自变量的水平不同而变化 ✅   
+
+
+## 多元回归的第一步最好检查一下变量间的相关性
+
+```{r}
+require(data.table)
+require(ggplot2)
+require(GGally)
+
+df %>%
+  dplyr::select(Pre_BMI, EOP_LOP) %>%
+  ggpairs(columns = 1:2, mapping = aes(colour = EOP_LOP))
+
+```
+
+
+## 📌  想回答的问题
+
+基本建模形式: Y ~ BMI + Age + 初产
+
+
+
+
+## 📌  一般资料
+
+### tableone
+
+```{r}
+library(compareGroups)
+restab_baseline <-
+  df %>%
+  filter(!is.na(BMI_group)) %>%
+  dplyr::select(meta_data %>%
+           filter(result_group == "基线值") %>%
+           pull(var) %>%
+           c("BMI_group")
+         ) %>%
+  table_one(path = here::here(
+    str_glue("analysis/data/derived_data/BMI_{num_groups}_01_一般资料.docx")
+  ))
+```
+
+
+##  📌  PE 表型
+
+1. 早发型PE、晚发型PE
+2. 轻度PE、重度PE
+3. 早发重度、晚发重度
+
+
+### table One
+
+```{r}
+library(compareGroups)
+restab_PE <-
+  df %>%
+  filter(!is.na(BMI_group)) %>%
+  dplyr::select(meta_data %>%
+           filter(result_group == "PE 表型") %>%
+           pull(var) %>%
+           c("BMI_group")
+         ) %>%
+  table_one(path = here::here(
+    str_glue("analysis/data/derived_data/BMI_{num_groups}_02_PE表型.docx")
+  ))
+
+```
+
+## 📌  妊娠结局
+
+
+### table One
+```{r}
+library(compareGroups)
+restab_renshen  <-
+  df %>%
+  filter(!is.na(BMI_group)) %>%
+  dplyr::select(meta_data %>%
+           filter(result_group == "妊娠结局") %>%
+           pull(var) %>%
+           c("BMI_group")
+         ) %>%
+  table_one(path = here::here(
+    str_glue("analysis/data/derived_data/BMI_{num_groups}_03_妊娠结局.docx")
+  ))
+```
+
+
+
+
+
+
+## 📌  器官功能损伤
+
+### table one
+
+```{r}
+library(compareGroups)
+restab_organ <-
+  df %>%
+  filter(!is.na(BMI_group)) %>%
+  dplyr::select(meta_data %>%
+           filter(result_group == "肝肾功能") %>%
+           pull(var) %>%
+           c("BMI_group")
+         ) %>%
+  table_one(path = here::here(
+    str_glue("analysis/data/derived_data/BMI_{num_groups}_04_肝肾功能.docx")
+  ))
+```
+
+
+## 肝肾功能 矫正 是否为子痫前期: 轻重
+
+```{r}
+res_df <-
+  df %>%
+  filter(!is.na(BMI_group)) %>%
+  dplyr::select(meta_data %>%
+           filter(result_group == "肝肾功能") %>%
+           pull(var) %>%
+           c("BMI_group", "HDP")
+         ) 
+
+res_tab_organ <-
+  compareGroups(BMI_group ~ . , data = res_df, method = NA) %>% 
+  createTable(
+      .,
+      #digits = c(p14 = 0, hormo = 1),
+      type = 2,
+      show.all = TRUE,
+      hide.no = "no",
+      show.n = FALSE
+    )
+
+
+ 
+res_tab_organ_HDP <- strataTable(res_tab_organ, "HDP")
+export2word(res_tab_organ_HDP, "~/Desktop/change_type.docx")
+```
+
+
+
+###  🐳  合并统计表
+
+```{r}
+
+files_docx <-
+  fs::dir_ls(here("analysis/data/derived_data"), regexp = "\\.docx$")
+
+doc <- read_docx()
+for (i in 1:length(files_docx)) {
+  print(i)
+  para <-
+    files_docx[i] %>%
+    basename() %>%
+    str_remove("BMI_3_[0-9]+_") %>%
+    str_remove(".docx")
+  doc <-
+    doc %>%
+    body_add_break(., pos = "after") %>%
+    body_add_par(., para, style = "heading 1") %>% 
+    body_add_docx(src = files_docx[i])
+}
+print(doc, target = str_glue("~/Desktop/统计检验表格.docx"))
+
+```
+
+
+
+
+## 📌 多元回归
+
+```{r}
+
+levels_gt_2 <- 
+meta_data %>% 
+  filter(type == "factor") %>% 
+  filter(result_group!="基线值") %>% 
+  pull(var) %>% 
+  dplyr::select(df, .) %>% 
+  map( ~ levels(.x) %>% length) %>% 
+  unlist() %>% 
+  enframe() %>% 
+  filter(value >= 3) %>% 
+  pull(name)
+
+vars_4_glm <- 
+meta_data %>% 
+  filter(!is.na(result_group)) %>% 
+  filter(result_group!="基线值") %>% 
+  filter(!(var %in% levels_gt_2))
+```
+
+### factor
+
+```{r}
+library(tidyverse)
+library(gtsummary)
+library(flextable)
+library(officer)
+## 设置需要进行拟合的变量
+y <- 
+vars_4_glm %>% 
+  filter(type == "factor") %>% 
+  pull(var)
+
+y_label <- 
+vars_4_glm %>% 
+  filter(type == "factor") %>% 
+  mutate(result_label = str_c(result_group, "____", label)) %>% 
+  pull(result_label)
+
+## 拟合的形式
+univ_formulas <-
+  y %>%
+  map( ~ {
+    as.formula(
+      paste(.x,
+            " ~ BMI_group + matern_age + Nulliparous"))
+  })
+
+## 拟合模型
+univ_models <-
+  univ_formulas %>%
+  map(~ {
+    
+    glm(.x, data = df, family = binomial(link = "logit"))
+  })
+
+## 
+
+library(tictoc)
+library(purrr)
+library(furrr)
+
+
+availableCores()
+future::plan(multiprocess, workers=8L)
+
+tic()
+res <-
+  univ_models %>%
+  future_map(~ tbl_regression(.x, exponentiate = TRUE) %>% 
+               gtsummary::as_flex_table(), .progress = TRUE)
+toc()
+
+names(res) <- y_label
+
+
+# 输出结果 --------------------------------------------------------
+
+for (i in 1:length(res)) {
+  print(i)
+  ft <- res[[i]]
+  para <- names(res)[i]
+  export_glm_res(ft, para, dir = "glm_res")
+}
+
+```
+
+
+### numeric
+
+```{r}
+library(tidyverse)
+library(gtsummary)
+library(flextable)
+library(officer)
+## 设置需要进行拟合的变量
+y <- 
+vars_4_glm %>% 
+  filter(type == "num") %>% 
+  pull(var)
+
+y_label <- 
+vars_4_glm %>% 
+  filter(type == "num") %>% 
+  mutate(result_label = str_c(result_group, "____", label)) %>% 
+  pull(result_label)
+
+## 拟合的形式
+univ_formulas <-
+  y %>%
+  map( ~ {
+    as.formula(
+      paste(.x,
+            " ~ BMI_group + matern_age + Nulliparous"))
+  })
+
+# 数据转换 -----------------------------------------------
+df_trans <- 
+  df %>% 
+  mutate_at(y, ~ my_boxcox(.x)) 
+
+
+## 拟合模型
+univ_models <-
+  univ_formulas %>%
+  map(~ {
+    glm(.x, data = df_trans)
+  })
+
+names(univ_models) <- y
+
+
+tic()
+res <-
+  univ_models %>%
+  future_map(~ tbl_regression(.x) %>% 
+               gtsummary::as_flex_table(), .progress = TRUE)
+toc()
+
+names(res) <- y_label
+
+
+# 输出结果 --------------------------------------------------------
+
+for (i in 1:length(res)) {
+  print(i)
+  ft <- res[[i]]
+  para <- names(res)[i]
+  export_glm_res(ft, para, dir = "glm_res")
+}
+
+```
+
+### 更新小数位点过低的变量
+
+```{r}
+
+var_digits_to_update <- 
+meta_data %>% 
+  filter(var %in% c("ALT", "AST", "LDH", "APTT", "PT")) %>% 
+  mutate(result_label = str_c(result_group, "____", label)) 
+
+res_update <-
+  univ_models[var_digits_to_update$var] %>%
+  future_map(
+    ~ tbl_regression(.x, ,
+      estimate_fun = function(x)
+        style_sigfig(x, digits = 5)
+    ) %>%
+      gtsummary::as_flex_table()
+  )
+
+
+names(res_update) <- var_digits_to_update$result_label
+
+# 更新部分输出结果 --------------------------------------------------------
+
+for (i in 1:length(res_update)) {
+  print(i)
+  ft <- res_update[[i]]
+  para <- names(res_update)[i]
+  print(str_glue("update table {para}"))
+  export_glm_res(ft, para, dir = "glm_res")
+}
+```
+
+
+
+### get lamdda
+```{r}
+var_num_to_trans <- 
+y %>% 
+  enframe() %>% 
+  dplyr::select(var = value) 
+
+mylambda <- c()
+for(i in 1:nrow(var_num_to_trans)){
+  print(var_num_to_trans$var[i])
+  mylambda <- c(
+    mylambda, 
+    my_boxcox_get_lambda(df[[var_num_to_trans$var[i]]])
+  )
+}
+var_num_to_trans$mylambda <- mylambda
+
+boxcox_trans <- function(label, mylambda){
+  glue::glue("{label}_转换 = ({label}^{mylambda} - 1) / {mylambda}")
+}
+        
+           
+meta_data_update <- 
+meta_data %>% 
+  left_join(var_num_to_trans, by = c("var" = "var")) %>% 
+  mutate(mylambda = gtsummary::style_sigfig(mylambda, 2)) %>% 
+  dplyr::rowwise() %>% 
+  mutate(boxcox_trans_formula = 
+           if_else(!is.na(mylambda), boxcox_trans(label, mylambda), ""))
+
+```
+
+## 📌  combine word
+
+### PE 表型
+```{r}
+comebine_word("PE 表型")
+```
+
+### 妊娠结局
+```{r}
+comebine_word("妊娠结局")
+```
+
+
+### 肝肾功能
+```{r}
+comebine_word("肝肾功能")
+```
+###  🐳 合并多元回归
+```{r}
+files_docx <-
+  fs::dir_ls("~/Desktop", regexp = "\\.docx$") %>% 
+  manuscriptsJX::vec_detect_keep("PE|妊娠|肝肾")
+
+doc <- read_docx()
+for (i in 1:length(files_docx)) {
+  print(i)
+  para <-
+    files_docx[i] %>%
+    basename() %>%
+    str_remove(".docx")
+  doc <-
+    doc %>%
+    body_add_break(., pos = "after") %>%
+    body_add_par(., para, style = "heading 1") %>% 
+    body_add_docx(src = files_docx[i])
+}
+print(doc, target = str_glue("~/Desktop/多元回归表格.docx"))
+```
+
+```{r}
+msg <- " ✅  图表已经画完."
+
+library(pushoverr)
+set_pushover_user(user = "u75zz7f7ge4niabdyy934j7gioojjk")
+set_pushover_app(token = "a9xh5g6j9eidkthcwfwf82chqw8iq5")
+pushover(message = msg)
+
+```
+
+## 📊图表
+
+### 变量转化前后
+
+
+```{r}
+library(tidyverse)
+theme_set(theme_light())
+
+plot_var <- 
+meta_data_update %>% 
+  filter(!is.na(mylambda)) %>% 
+  pull(var)
+
+
+df %>%
+  dplyr::select(all_of(plot_var)) %>% 
+  select_if(is.numeric) %>%
+  gather() %>%
+  ggplot(aes(x = value)) +
+  facet_wrap(~ key, scales = "free", ncol = 4) +
+  geom_density()
+  #geom_histogram()
+
+df_trans %>%
+  dplyr::select(all_of(plot_var)) %>% 
+  select_if(is.numeric) %>%
+  gather() %>%
+  ggplot(aes(x = value)) +
+  facet_wrap(~ key, scales = "free", ncol = 4) +
+  geom_density()
+
+
+# with fill ==============================
+df_trans %>%
+  dplyr::select(c(all_of(plot_var), "BMI_group")) %>% 
+  {bind_cols(select_if(., is.numeric),
+             select_at(., "BMI_group"))
+  } %>%
+  gather(-BMI_group, key = "var", value = "value") %>%
+  # ggplot(aes(x = BMI_group, y = value, fill = BMI_group)) +
+  # geom_boxplot() +
+  ggplot(aes(x = value, fill = BMI_group)) + 
+  geom_histogram() +
+  facet_wrap(~ var, scales = "free") 
+```
+
+### 异常数据检查
+
+```{r}
+
+library(ggpubr)
+library(tidyverse)
+# Specify the comparisons you want
+# my_comparisons <- list( c("0.5", "1"), c("1", "2"), c("0.5", "2") )
+my_comparisons <- 
+  df %>% 
+  pull(BMI_group) %>% unique() %>% as.character() %>% 
+  tidystringdist::tidy_comb_all() %>% 
+  t() %>% as.data.frame() %>% 
+  map(~ as.vector(.x))
+
+p <-
+  df %>%
+  #mutate(ALT = log10(ALT)) %>%
+  filter(HDP == "重度") %>% 
+  ggboxplot(., x = "BMI_group", y = "ALT",
+            color = "BMI_group", shape = "BMI_group",
+               add = "jitter") +
+  stat_compare_means(comparisons = my_comparisons) + # Add pairwise comparisons p-value
+  stat_compare_means()                   # Add global p-value
+
+library(plotly)
+p <- p + yscale("log10", .format = TRUE) 
+
+plotly::ggplotly(p)
+
+
+```
+
+
+
+
+## 数据问题
+
+1. 两张表格用合并表格, 重度 PE 是是合并表格的子集 ✅   
+2. __age__ 和 __是否是初产妇__的变量没有
+3. BMI 要重新计算, 有些单位搞错了, 单位是 M, 弄成 cm ✅   
+4. FGA == FGR ✅   
+5. PE 表型要用正则表达式进行提取 ✅   
+
+## 几个小问题
+
+1. 婴儿抢救次数: null 与 0 是一样吗? __是的__
+2. 空白是缺失数据吗? __是的__
+3. 婴儿转归中的 / 是什么意思? __缺失数据__
+4. 孕前身高中的: 0 和小数 是什么意思? __0 是缺失, 小数是单位错误, m 写成 cm __
+5. 孕前BMI 中的 0 与 0.00? 是什么意思 __数据缺失, 单位错误__
+6. 肥胖中的 / 是什么意思 __缺失__
+7. 实验室检查变量中的 0 是什么意思? __缺失__
+
+
+凝血指标: 
+
+凝血功能检测指标包括凝血酶原时间（Prothrombin time, PT）、活化部分凝血活酶时间（Activated partial thromboplatin time, APTT）、凝血酶时间（Thrombin time, TT）、纤维蛋白原（Fibrinogen, FIB）、凝血时间（Clotting time，CT）和国际标准化比值（International normalized ratio，INR）
+
+
+➤ PT-凝血酶原时间
+
+PT是指在血浆中加入组织因子（TF或组织凝血活酶）和Ca2+启动外源性凝血系统，观察血浆的凝固时间。PT是目前临床最常用的筛选试验之一，用于评价外源性凝血途径功能。正常参考值为10～14秒。
+
+➤ APTT-活化部分凝血活酶时间
+
+APTT是在血浆中加入XII因子活化剂、Ca2+、磷脂启动血浆内源性凝血途径，观察血浆凝固时间。APTT也是目前临床最常用的筛选试验之一，用于评价内源性凝血途径功能。正常参考值为32～43秒。
+
+➤ INR-国际标准化比值
+
+INR是受检患者的PT与正常对照PT之比的ISI次方（ISI是国际的敏感指数，试剂出厂时由厂家标定）。同一份血浆在不同的实验室，用不同的ISI试剂检测，PT值结果差异很大，但测得的INR值相同，这样使结果具有可比性。正常参考值为0.9～1.1。
+
+➤ TT-凝血酶时间
+
+TT是在血浆中加入标准凝血酶，检测凝血过程的第三个阶段，反映血浆内纤维蛋白原水平及血浆中肝素样物质的多少。正常参考值为16～18秒。
+
+➤ FIB-纤维蛋白原
+
+FIB是通过在受检血浆中加入一定量凝血酶，使血浆中的纤维蛋白原转变为纤维蛋白，通过比浊原理计算出纤维蛋白原的含量。正常参考值为2～4 g/L。
+
+➤ FDP-血浆纤维蛋白降解产物
+
+FDP是指在纤溶亢进时产生的纤溶酶的作用下，纤维蛋白或纤维蛋白原被分解后产生的降解产物的总称。正常参考值1～5 mg／L。
+
+➤ CT-凝血时间
+
+CT是指血液离开血管，在体外发生凝固的时间，主要是测定内源性凝血途径中各种凝血因子是否缺乏，功能是否正常，或者是否有抗凝物质增多。
+
+[【凝血指标那么多，到底要看哪一个？】-中华医学网](http://medline.org.cn/news/detail.do?newsId=12108)
+
+PT: 凝血酶原时间
+时间长代表低凝血状态?
+
+活化部分凝血活酶时间（APTT）
+
+INR: 0.8-1.5
+
+## 数据质量
+
+部分数据缺失
+协变量 Age 和 是否为初产妇没有
+格式不规范
+
+## 结果
+
+## 数据分析小结: 主要时间花在数据格式的清理上, 有以下几个小问题
+
+数据格式不规范, 大量时间都用在了数据清理上: 命名 和 特殊字符
+
++ 列名最好不要用中文, 不要有括号, 空格, 特殊符号
++ 0 和 missing 数据混用
++ / + . 等特殊字符出现在表格中
++ 数据没有复核, 出现单位不一致, m 和 cm 一起出现
++ 分类变量的注释信息缺失: 比如 0 代表什么, 1 代表什么?
+
+
+## 可能的原因
+
++ PE 的诊断
++ 数据复核
+
+## 待解决的问题
+
++ 没地方午睡
++ 固定办公桌
