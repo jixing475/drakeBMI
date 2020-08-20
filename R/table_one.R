@@ -15,6 +15,10 @@ table_one <- function(data, path = "~/Desktop/example.docx"){
       .,
       #digits = c(p14 = 0, hormo = 1),
       type = 2,
+      show.p.mul = TRUE, # 显示过个 P value, 两两之间的比较
+      extra.labels = c("Mean (SD)","Median (IQR)","",""), # 给变量添上额外标签
+      digits.p = 3,
+      sd.type = 2, # 是() 还是 ±
       show.all = TRUE,
       hide.no = "no",
       show.n = FALSE

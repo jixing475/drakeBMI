@@ -27,183 +27,29 @@ knitr::opts_chunk$set(
 # install.packages("conflicted")
 knitr::opts_knit$set(root.dir = usethis::proj_path())
 
-# libraries used in report
+ # 🔨   -------------------------------------------------------------
 library(drakeBMI)
 set_pkg()
 my.prop = fp_text(font.size = 14,
                   bold = TRUE,
                   font.family = "Times")
 
-theme_set(theme_light(base_family = "Avenir"))
+theme_set(theme_light(base_family = "Times"))
 ```
 
 
 ## Import Data
+
 ```{r}
-raw_data <- readd(raw_data) 
-meta_data <- readd(meta_data)
+source("./plan.R")
 ```
 
-## 更新 metadata
-
-删除一些原始数据表格的修改, 比如有些变量不见了, 变量的顺序改变了
-
 ```{r}
-meta_data <-
-  raw_data %>%
-  colnames() %>%
-  enframe() %>%
-  dplyr::select(var = value) %>%
-  left_join(meta_data) %>%
-  bind_rows(meta_data %>% filter(var_mutate == "yes"))
-```
-
-
-
-## data type raw var
-
-```{r}
-cols_num <- meta_data %>% 
-  filter(var_mutate == "no") %>% 
-  filter(type == "num") %>% 
-  pull(var)
-
-cols_fac <- meta_data %>% 
-  filter(var_mutate == "no") %>% 
-  filter(type == "factor") %>% 
-  pull(var)
-
-raw_data <- 
-  raw_data %>% 
-  mutate_at(all_of(cols_num), as.numeric) %>% 
-  mutate_at(all_of(cols_fac), as.factor) %>% 
-  mutate(patient_id = as.character(patient_id))
-  
-```
-
-
-
-## tidy data
-
-```{r}
-data_tidy <- 
-  raw_data %>%
-  # 替代实验变量中的 0 数值
-  mutate_at(meta_data %>% 
-              filter(type == "num") %>% 
-              filter(result_group == "肝肾功能") %>% 
-              pull(var),
-            ~ na_x2na(., x = 0) %>% na_x2na(., x = "/")
-  ) %>% 
-  # PE 表型 ==============================
-  mutate(age_group = if_else(matern_age >= 35, "高龄", "正常"),
-         liver_abnormal = if_else(ALT > 35 | AST > 84, "是", "否"),
-         alb_group = if_else(ALB < 25, "是", "否"),
-         cr_group = if_else(Cr > 106, "是", "否"),
-         plt_group = if_else(PLT < 100, "是", "否"),
-         M_outcome = if_else(liver_abnormal == "是" |
-                              cr_group == "是" |
-                               NICU_admission == "1" |
-                               ICU_admission == "1", 
-                             "是", "否")
-         ) %>% 
-  mutate(
-    infant_outcome = fct_relevel(infant_outcome,
-                                 "活产",
-                                 "围产死亡"),
-    SGA_LGA = fct_relevel(SGA_LGA,
-                          "正常体重",
-                          "小于胎龄儿",
-                          "大于胎龄儿")
-  ) %>% 
-  
-  # 两组 ==============================
-  # mutate(
-  #   BMI_group = case_when(
-  #     Pre_BMI <= 22.9 ~ "Normal",
-  #     Pre_BMI > 22.9 ~ "Obese"
-  #   ))  %>%
-  # dplyr::mutate(
-  #   BMI_group = as.factor(BMI_group),
-  #   BMI_group = fct_collapse(BMI_group,
-  #                            `Normal` = c("Normal"),
-  #                            `Obese` = c("Obese")),
-  #   BMI_group = fct_relevel(BMI_group,
-  #                           "Normal",
-  #                           "Obese")) %>%
-  # 三组  ==============================
-  mutate(
-    BMI_group = case_when(
-      Pre_BMI <= 22.9 ~ "Normal",
-      22.9 < Pre_BMI & Pre_BMI <= 24.9 ~ "Over weight",
-      Pre_BMI > 24.9 ~ "Obese"
-    ))  %>%
-  dplyr::mutate(
-    BMI_group = as.factor(BMI_group),
-    BMI_group = fct_collapse(BMI_group,
-                             `Normal` = c("Normal"),
-                             `Over weight` = c("Over weight"),
-                             `Obese` = c("Obese")),
-    BMI_group = fct_relevel(BMI_group,
-                            "Normal",
-                            "Over weight",
-                            "Obese")) 
-  # 四组 ==============================
-  # mutate(
-  #   BMI_group = case_when(
-  #     Pre_BMI <= 18.5 ~ "体重不足",
-  #     18.5 < Pre_BMI & Pre_BMI <= 23.9 ~ "体重正常",
-  #     Pre_BMI > 23.9 & Pre_BMI <= 27.9 ~ "超重",
-  #     Pre_BMI > 28  ~ "肥胖"
-  #   ))  %>%
-  # dplyr::mutate(
-  #   BMI_group = as.factor(BMI_group),
-  #   BMI_group = fct_collapse(BMI_group,
-  #                            `体重不足` = c("体重不足"),
-  #                            `体重正常` = c("体重正常"),
-  #                            `超重` = c("超重"),
-  #                            `肥胖` = c("肥胖")),
-  #   BMI_group = fct_relevel(BMI_group,
-  #                           "体重不足",
-  #                           "体重正常",
-  #                           "超重",
-  #                           "肥胖")) %>% 
-
-num_groups <- 3
-```
-
-## set label for tidy data
-```{r}
-cols_num <- meta_data %>% 
-  filter(type == "num") %>% 
-  pull(var)
-
-cols_fac <- meta_data %>% 
-  filter(type == "factor") %>% 
-  pull(var)
-
-data_tidy <- 
-  data_tidy %>% 
-  mutate_at(all_of(cols_num), as.numeric) %>% 
-  mutate_at(all_of(cols_fac), as.factor) %>% 
-  mutate(patient_id = as.character(patient_id))
-# set label for tidy data
-library(labelled)
-
-label_update <- 
-colnames(data_tidy) %>% 
-  as_tibble() %>% 
-  left_join(meta_data %>% dplyr::select(var, label), by = c("value"="var")) %>% 
-  pull(label)
-
-labelled::var_label(data_tidy) <- label_update
-```
-
-## df <- data_tidy 
-```{r}
+raw_data <- drake::readd(raw_data)
+meta_data <- drake::readd(meta_data)
+data_tidy  <- drake::readd(data_tidy)
 df <- data_tidy
 ```
-
 
 ## EDA
 
@@ -245,7 +91,7 @@ ggplot(df) +
 
 ## 建模前的检查
 
-## 假设符合的检验 = 一般线性模型的假设
+### 假设符合的检验 = 一般线性模型的假设
 
 1. 正态性: Y 变量要是正态分布 ✅   
 2. 独立性: 样本间独立, 没有重复
@@ -253,7 +99,7 @@ ggplot(df) +
 4. 同方差性: 因变量的方差不随自变量的水平不同而变化 ✅   
 
 
-## 多元回归的第一步最好检查一下变量间的相关性
+### 多元回归的第一步最好检查一下变量间的相关性
 
 ```{r}
 require(data.table)
@@ -265,21 +111,13 @@ df %>%
   ggpairs(columns = 1:2, mapping = aes(colour = EOP_LOP))
 
 ```
-
-
-## 📌  想回答的问题
-
-基本建模形式: Y ~ BMI + Age + 初产
-
-
-
+# 统计图表
 
 ## 📌  一般资料
 
 ### tableone
 
 ```{r}
-library(compareGroups)
 restab_baseline <-
   df %>%
   filter(!is.na(BMI_group)) %>%
@@ -296,15 +134,10 @@ restab_baseline <-
 
 ##  📌  PE 表型
 
-1. 早发型PE、晚发型PE
-2. 轻度PE、重度PE
-3. 早发重度、晚发重度
-
-
 ### table One
 
 ```{r}
-library(compareGroups)
+
 restab_PE <-
   df %>%
   filter(!is.na(BMI_group)) %>%
@@ -324,7 +157,7 @@ restab_PE <-
 
 ### table One
 ```{r}
-library(compareGroups)
+
 restab_renshen  <-
   df %>%
   filter(!is.na(BMI_group)) %>%
@@ -348,7 +181,7 @@ restab_renshen  <-
 ### table one
 
 ```{r}
-library(compareGroups)
+
 restab_organ <-
   df %>%
   filter(!is.na(BMI_group)) %>%
@@ -363,12 +196,14 @@ restab_organ <-
 ```
 
 
-## 肝肾功能 矫正 是否为子痫前期: 轻重
+## 肝肾功校正:
+
+> 是否为子痫前期: 轻重
 
 ```{r}
 res_df <-
   df %>%
-  filter(!is.na(BMI_group)) %>%
+  dplyr::filter(!is.na(BMI_group)) %>%
   dplyr::select(meta_data %>%
            filter(result_group == "肝肾功能") %>%
            pull(var) %>%
@@ -385,9 +220,6 @@ res_tab_organ <-
       hide.no = "no",
       show.n = FALSE
     )
-
-
- 
 res_tab_organ_HDP <- strataTable(res_tab_organ, "HDP")
 export2word(res_tab_organ_HDP, "~/Desktop/change_type.docx")
 ```
@@ -448,10 +280,6 @@ meta_data %>%
 ### factor
 
 ```{r}
-library(tidyverse)
-library(gtsummary)
-library(flextable)
-library(officer)
 ## 设置需要进行拟合的变量
 y <- 
 vars_4_glm %>% 
@@ -482,14 +310,6 @@ univ_models <-
   })
 
 ## 
-
-library(tictoc)
-library(purrr)
-library(furrr)
-
-
-availableCores()
-future::plan(multiprocess, workers=8L)
 
 tic()
 res <-

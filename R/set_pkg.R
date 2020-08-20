@@ -23,4 +23,8 @@ set_pkg <- function(){
   library(gtsummary)
   library(flextable)
   library(officer)
+  library(compareGroups)
+  library(tictoc)
+  library(purrr)
+  library(furrr)
 }
